@@ -1,3 +1,4 @@
+<<<<<<< HEAD
 # 🛡️ Local AI System Log & Syslog Summarizer
 
 Analyze noisy system logs (SSH auth logs, syslog, application stack traces)
@@ -140,3 +141,7 @@ end-to-end without needing your own logs handy.
   recommended: `pip install -U streamlit`.
 - **Nothing happens on file upload** — only `.txt` and `.log` extensions
   are accepted; rename the file or paste its contents directly instead.
+=======
+# Advance-Syslog-Summarizer
+Autonomous SOC Analyst &amp; SIEM Alert TriagerAn agentic AI assistant designed to eliminate alert fatigue by autonomously investigating SIEM events, correlating logs.
+>>>>>>> 796b617e48e5ab7dbcf261595ad24bffdc8a401c
