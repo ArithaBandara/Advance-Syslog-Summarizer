@@ -1,0 +1,13 @@
+2026-01-10 09:02:11 ERROR [OrderWorker-3] Uncaught exception processing order batch
+java.lang.OutOfMemoryError: Java heap space
+    at com.example.orders.BatchProcessor.loadAll(BatchProcessor.java:142)
+    at com.example.orders.BatchProcessor.run(BatchProcessor.java:76)
+    at java.base/java.lang.Thread.run(Thread.java:840)
+2026-01-10 09:02:11 INFO  [OrderWorker-3] Retrying batch in 30s (attempt 1/3)
+2026-01-10 09:02:12 WARN  [db-pool] Connection to 10.4.2.19:5432 timed out after 5000ms
+2026-01-10 09:02:12 WARN  [db-pool] Active connections: 98/100 (pool near capacity)
+2026-01-10 09:02:41 ERROR [OrderWorker-3] Uncaught exception processing order batch
+java.lang.OutOfMemoryError: Java heap space
+    at com.example.orders.BatchProcessor.loadAll(BatchProcessor.java:142)
+2026-01-10 09:02:41 ERROR [alerting] Failed to page on-call engineer sre-oncall@example.com - SMTP timeout
+2026-01-10 09:03:00 FATAL [main] Shutting down - unrecoverable memory pressure
