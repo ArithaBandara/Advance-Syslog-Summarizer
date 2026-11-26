@@ -1,12 +1,13 @@
 """
-Local AI System Log & Syslog Summarizer
+local ai system log & syslog summarizer
 =========================================
-A fully local pipeline: Streamlit (UI) -> Python DLP scrubber (middleware)
--> Ollama / Llama 3.2 (inference). No log data ever leaves the machine.
+a local tool that uses streamlit, python, and ollama to analyze system logs.
+sensitive information is removed before logs are sent to the local ai model,
+so no log data leaves the machine.
 
-Run with:  streamlit run app.py
-Requires:  Ollama running locally (default http://localhost:11434)
-           with the "llama3.2" model already pulled (`ollama pull llama3.2`).
+run with: streamlit run app.py
+requires: ollama running locally (default http://localhost:11434)
+          and the llama3.2 model (`ollama pull llama3.2`).
 """
 
 import re
@@ -17,7 +18,7 @@ import ollama
 import streamlit as st
 
 # =============================================================================
-# SECTION 1: CONFIGURATION
+# section 1: configuration
 # =============================================================================
 
 APP_TITLE = "🛡️ Local AI Log Summarizer"
@@ -26,39 +27,38 @@ DEFAULT_OLLAMA_HOST = "http://localhost:11434"
 
 ANALYSIS_MODES = {
     "Quick Summary": (
-        "Provide a short, plain-English summary (3-6 bullet points) of what is "
-        "happening in this log. Focus on WHAT occurred, not deep analysis. "
-        "Avoid speculation beyond what the log evidence supports."
+        "Give a short summary (3-6 bullet points) of what is happening in "
+        "this log. Focus on the main events and avoid guessing beyond what "
+        "the log actually shows."
     ),
     "Root Cause & Fix": (
-        "Diagnose the ROOT CAUSE of the issue(s) in this log. Structure your "
-        "answer as:\n"
-        "1. **Root Cause** - the most likely underlying cause\n"
-        "2. **Evidence** - the specific log lines/patterns that support this\n"
-        "3. **Recommended Fix** - concrete, actionable steps to resolve it\n"
-        "4. **Prevention** - one suggestion to prevent recurrence"
+        "Look at the log and identify the most likely cause of the problem. "
+        "Organize your answer into:\n"
+        "1. **Root Cause** - what is most likely causing the issue\n"
+        "2. **Evidence** - log entries that support your conclusion\n"
+        "3. **Recommended Fix** - steps to fix the problem\n"
+        "4. **Prevention** - one way to avoid the same issue in the future"
     ),
     "Security Audit": (
-        "Review this log strictly from a SECURITY perspective. Identify any "
-        "signs of brute-force attempts, unauthorized access, privilege "
-        "escalation, unusual timing patterns, or other suspicious activity. "
-        "Structure your answer as:\n"
+        "Check the log for possible security issues, such as failed login "
+        "attempts, unauthorized access, privilege escalation, or unusual "
+        "activity. Organize your answer into:\n"
         "1. **Risk Level** - Low / Medium / High / Critical\n"
-        "2. **Findings** - suspicious patterns observed\n"
-        "3. **Recommended Action** - what to investigate or lock down next\n"
-        "If nothing suspicious is found, say so plainly - do not invent risks."
+        "2. **Findings** - anything suspicious found in the log\n"
+        "3. **Recommended Action** - what should be checked or done next\n"
+        "If everything looks normal, say so. Do not make up security risks."
     ),
 }
 
 # =============================================================================
-# SECTION 2: DATA LOSS PREVENTION (DLP) - REGEX SANITIZATION
+# section 2: removing sensitive information
 # =============================================================================
-# Every pattern below is compiled once at import time for performance.
-# Order matters: more specific patterns (emails, UUIDs, keys) run before the
-# generic IPv4 pattern where overlap could occur.
+
+# compile the patterns once so we can reuse them whenever a log is checked.
+# check the more specific patterns before the general ip address patterns.
 
 DLP_PATTERNS = [
-    # (label, compiled_regex, replacement_token)
+    # each entry contains a label, regex pattern, and replacement value.
     (
         "EMAIL",
         re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b"),
@@ -79,7 +79,7 @@ DLP_PATTERNS = [
     ),
     (
         "GENERIC_SECRET_ASSIGNMENT",
-        # Matches patterns like: api_key=xxxxx, token: "xxxxx", password=xxxxx
+        # look for common ways of storing passwords, tokens, and api keys.
         re.compile(
             r"(?i)\b(api[_-]?key|secret|token|password|passwd|pwd|auth)\b"
             r"\s*[=:]\s*['\"]?[A-Za-z0-9\-_\.]{6,}['\"]?"
@@ -114,12 +114,10 @@ DLP_PATTERNS = [
 
 def sanitize_log(raw_text: str) -> tuple[str, dict[str, int]]:
     """
-    Scrub sensitive data out of raw log text before it ever reaches the LLM.
+    remove sensitive information from the log before sending it to the ai.
 
-    Returns:
-        (sanitized_text, counts) where `counts` maps each DLP category to
-        the number of redactions made - shown to the user as a transparency
-        report so they can verify nothing sensitive slipped through.
+    returns the cleaned log along with a count of the items removed
+    from each category. these counts are shown in the app.
     """
     sanitized = raw_text
     counts: dict[str, int] = {}
@@ -134,11 +132,11 @@ def sanitize_log(raw_text: str) -> tuple[str, dict[str, int]]:
 
 
 # =============================================================================
-# SECTION 3: LLM INTEGRATION (OLLAMA)
+# section 3: ollama integration
 # =============================================================================
 
 def build_system_prompt(analysis_mode: str) -> str:
-    """Construct the system prompt that sets the model's persona and task."""
+    """create the instructions for the ai based on the selected analysis type."""
     task_instructions = ANALYSIS_MODES[analysis_mode]
     return (
         "You are a Senior DevOps / Site Reliability Engineer with deep "
@@ -158,8 +156,7 @@ def build_system_prompt(analysis_mode: str) -> str:
 
 def stream_llm_response(client: "ollama.Client", model: str, system_prompt: str, log_text: str):
     """
-    Generator that yields incremental text chunks from Ollama's streaming
-    chat API. Designed to be passed directly to st.write_stream().
+    send the log to ollama and display the response as it is generated.
     """
     try:
         stream = client.chat(
@@ -174,7 +171,8 @@ def stream_llm_response(client: "ollama.Client", model: str, system_prompt: str,
             piece = chunk.get("message", {}).get("content", "")
             if piece:
                 yield piece
-    except Exception as exc:  # noqa: BLE001 - surface any Ollama/connection error to the UI
+    except Exception as exc:  # noqa: BLE001
+        # show the connection error and remind the user to check ollama.
         yield (
             "\n\n**⚠️ Error contacting Ollama.** "
             f"Details: `{exc}`\n\n"
@@ -184,11 +182,11 @@ def stream_llm_response(client: "ollama.Client", model: str, system_prompt: str,
 
 
 # =============================================================================
-# SECTION 4: STREAMLIT UI
+# section 4: streamlit interface
 # =============================================================================
 
 def render_sidebar() -> tuple[str, str]:
-    """Render sidebar controls and return (ollama_host, model_name)."""
+    """show the sidebar settings and return the selected values."""
     st.sidebar.header("⚙️ Settings")
     ollama_host = st.sidebar.text_input(
         "Ollama host",
@@ -211,7 +209,7 @@ def render_sidebar() -> tuple[str, str]:
 
 
 def render_sanitization_report(counts: dict[str, int]) -> None:
-    """Show a small transparency report of what was redacted, if anything."""
+    """show how many sensitive items were removed from the log."""
     if not counts:
         st.caption("✅ No sensitive patterns detected in the input.")
         return
@@ -223,7 +221,7 @@ def render_sanitization_report(counts: dict[str, int]) -> None:
 
 
 def get_combined_log_input(pasted_text: str, uploaded_file) -> str:
-    """Merge pasted text and an uploaded file into a single log blob."""
+    """combine pasted log text and uploaded files into one string."""
     parts = []
     if uploaded_file is not None:
         try:
@@ -249,7 +247,7 @@ def main() -> None:
 
     ollama_host, model_name = render_sidebar()
 
-    # --- Input area -----------------------------------------------------
+    # input section
     col_left, col_right = st.columns([1, 1])
 
     with col_left:
@@ -264,7 +262,7 @@ def main() -> None:
 
     log_input = get_combined_log_input(pasted_text, uploaded_file)
 
-    # --- Output area ------------------------------------------------------
+    # results section
     with col_right:
         st.subheader("Result")
 
@@ -273,16 +271,16 @@ def main() -> None:
                 st.warning("Please paste some log text or upload a file first.")
                 return
 
-            # Step 1: DLP sanitization happens BEFORE anything touches the model.
+            # clean the log before passing it to the ai.
             with st.spinner("Sanitizing log data (removing IPs, emails, UUIDs, secrets)..."):
                 sanitized_text, redaction_counts = sanitize_log(log_input)
             render_sanitization_report(redaction_counts)
 
-            # Optional: let the user inspect exactly what will be sent.
+            # let the user check the cleaned version before analysis.
             with st.expander("View sanitized log (exactly what is sent to the model)"):
                 st.code(sanitized_text, language="text")
 
-            # Step 2: Build the prompt and stream the model's response.
+            # send the cleaned log to ollama and display the response.
             system_prompt = build_system_prompt(analysis_mode)
             client = ollama.Client(host=ollama_host)
 
@@ -293,7 +291,7 @@ def main() -> None:
                     stream_llm_response(client, model_name, system_prompt, sanitized_text)
                 )
             except AttributeError:
-                # Fallback for older Streamlit versions without st.write_stream (<1.31)
+                # older streamlit versions do not support st.write_stream().
                 placeholder = st.empty()
                 accumulated = ""
                 for chunk in stream_llm_response(client, model_name, system_prompt, sanitized_text):
